@@ -469,6 +469,11 @@ pub struct DspState {
     pub pc: u32,
     /// PC advance after instruction execution (word count added to PC)
     pub pc_advance: u32,
+    /// Set after RTS/RTI and cleared by the next loop-end check.
+    /// Returning to LA+1 completes the current DO iteration,
+    /// even when the PC did not advance sequentially.
+    /// An ordinary branch to LA+1 must not trigger a loop-back.
+    pub returned: u32,
     /// Where a dynamic-address store lands when its address misses the
     /// space's RAM: the emitter selects between the RAM element and this
     /// word so the store itself is unconditional (`write_mem_dyn`). Never
@@ -539,6 +544,7 @@ impl DspState {
         Self {
             pc: 0,
             pc_advance: 0,
+            returned: 0,
             mem_write_sink: 0,
             cycle_count: 0,
             registers,
@@ -735,9 +741,11 @@ impl DspState {
         // instruction at LA triggers the loop-back (pc_advance != 0); a
         // branch that lands on LA+1 does not. Hardware-verified: BRKcc jumps
         // to LA+1 with the loop state left live, and the loop neither
-        // re-enters nor decrements LC.
+        // re-enters nor decrements LC. A return to LA+1 does complete the
+        // iteration because the call's final word was fetched at LA.
+        let returned = std::mem::take(&mut self.returned) != 0;
         if (self.registers[reg::SR] & (1 << sr::LF)) != 0
-            && self.pc_advance != 0
+            && (self.pc_advance != 0 || returned)
             && self.pc == mask_pc(self.registers[reg::LA] + 1)
         {
             self.registers[reg::LC] = self.registers[reg::LC].wrapping_sub(1) & REG_MASKS[reg::LC];

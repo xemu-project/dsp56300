@@ -115,8 +115,15 @@ impl<'a> Emitter<'a> {
         self.store_pc(a);
     }
 
+    /// Record an RTS/RTI for the next DO loop-end check.
+    fn mark_returned(&mut self) {
+        let one = self.builder.ins().iconst(types::I32, 1);
+        self.store_u32(super::OFF_RETURNED, one);
+    }
+
     pub(super) fn emit_rts(&mut self) {
         self.set_inst_len(0);
+        self.mark_returned();
         self.set_cycles(3);
         // RTS/RTI underflow budget: 3 - len (silicon: the branch to
         // slot-0 storage executes, then 2 more stream words).
@@ -127,6 +134,7 @@ impl<'a> Emitter<'a> {
 
     pub(super) fn emit_rti(&mut self) {
         self.set_inst_len(0);
+        self.mark_returned();
         self.set_cycles(3);
         let budget = 3u32.saturating_sub(self.cur_decode_len.max(1));
         let (ssh, ssl) = self.stack_pop(budget);

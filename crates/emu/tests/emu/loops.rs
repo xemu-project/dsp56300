@@ -3434,3 +3434,58 @@ fn test_wedge_case_2838_block_preempts() {
         s.cycle_count
     );
 }
+
+/// A DO loop ending with a subroutine call must repeat on return to LA+1.
+/// Some Xbox GP programs use this sequence.
+/// Check JSR and BSR in compiled and stepped execution.
+fn call_at_la(call: [u32; 2], stepped: bool) {
+    let mut jit = JitEngine::new(PRAM_SIZE);
+    let mut xram = [0u32; XRAM_SIZE];
+    let mut yram = [0u32; YRAM_SIZE];
+    let mut pram = [0u32; PRAM_SIZE];
+    let mut s = DspState::new(MemoryMap::test(&mut xram, &mut yram, &mut pram));
+    s.registers[reg::LA] = 0x1234; // restored after the loop
+    s.registers[reg::LC] = 0x5678;
+    pram[0] = 0x060480; // do #4,$0003
+    pram[1] = 0x000003; // LA points to the call's second word
+    pram[2] = call[0];
+    pram[3] = call[1];
+    pram[4] = 0x0C0004; // jmp $0004 (halt)
+    pram[0x10] = 0x000008; // inc A
+    pram[0x11] = 0x00000C; // rts
+    if stepped {
+        for _ in 0..64 {
+            if s.pc == 4 {
+                break;
+            }
+            run_one(&mut s, &mut jit);
+        }
+    } else {
+        s.run(&mut jit, 1000);
+    }
+    assert_eq!(s.registers[reg::A0], 4);
+    assert_eq!(s.pc, 4);
+    assert_eq!(s.registers[reg::SR] & (1 << sr::LF), 0);
+    assert_eq!(s.registers[reg::LA], 0x1234);
+    assert_eq!(s.registers[reg::LC], 0x5678);
+}
+
+#[test]
+fn test_run_do_loop_bsr_at_la() {
+    call_at_la([0x0D1080, 0x00000E], false); // bsr $0010
+}
+
+#[test]
+fn test_step_do_loop_bsr_at_la() {
+    call_at_la([0x0D1080, 0x00000E], true);
+}
+
+#[test]
+fn test_run_do_loop_jsr_at_la() {
+    call_at_la([0x0BF080, 0x000010], false); // jsr $0010
+}
+
+#[test]
+fn test_step_do_loop_jsr_at_la() {
+    call_at_la([0x0BF080, 0x000010], true);
+}

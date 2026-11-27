@@ -1191,8 +1191,10 @@ impl DspState {
             // Only sequential fall-through from LA triggers the loop-back
             // (pc_advance != 0); a branch landing on LA+1 does not. Matches
             // hardware BRKcc, which jumps to LA+1 leaving the loop state live.
+            // A return to LA+1 also completes the DO iteration.
+            let returned = std::mem::take(&mut self.returned) != 0;
             if (self.registers[reg::SR] & (1 << sr::LF)) != 0
-                && self.pc_advance != 0
+                && (self.pc_advance != 0 || returned)
                 && self.pc == mask_pc(self.registers[reg::LA] + 1)
             {
                 self.registers[reg::LC] =
